@@ -1,5 +1,6 @@
 <?php
 
+use Bitrix\Main\Engine\ActionFilter;
 use Bitrix\Main\Engine\Contract\Controllerable;
 use Bitrix\Main\Error;
 use Bitrix\Main\ErrorCollection;
@@ -42,12 +43,29 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
             'TITLE' => trim((string) ($arParams['TITLE'] ?? 'Заказать звонок')),
             'BUTTON_TEXT' => trim((string) ($arParams['BUTTON_TEXT'] ?? 'Жду звонка')),
             'SUCCESS_TEXT' => trim((string) ($arParams['SUCCESS_TEXT'] ?? 'Спасибо, перезвоним в ближайшее время.')),
-            'SHOW_COMMENT' => ($arParams['SHOW_COMMENT'] ?? 'Y') === 'Y',
-            'SHOW_SLOTS' => ($arParams['SHOW_SLOTS'] ?? 'Y') === 'Y',
+            'SHOW_COMMENT' => self::toBool($arParams['SHOW_COMMENT'] ?? null),
+            'SHOW_SLOTS' => self::toBool($arParams['SHOW_SLOTS'] ?? null),
             'CONSENT_URL' => trim((string) ($arParams['CONSENT_URL'] ?? '/policy/')),
-            'SEND_MAIL' => ($arParams['SEND_MAIL'] ?? 'Y') === 'Y',
+            'SEND_MAIL' => self::toBool($arParams['SEND_MAIL'] ?? null),
             'CACHE_TIME' => 0,
         ];
+    }
+
+    /**
+     * Из настроек компонента приходит 'Y'/'N', а из подписанных параметров —
+     * уже готовый bool: подготовка параметров вызывается и на ajax-действии.
+     */
+    private static function toBool(mixed $value, bool $default = true): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        return in_array($value, ['Y', 'y', '1', 1, true], true);
     }
 
     /**
@@ -59,9 +77,21 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
         return ['SEND_MAIL', 'SHOW_COMMENT', 'SHOW_SLOTS'];
     }
 
+    /**
+     * По умолчанию ядро вешает на действие проверку авторизации, а форму
+     * заполняет гость. Оставляем только POST и защиту от CSRF.
+     */
     public function configureActions(): array
     {
-        return [];
+        return [
+            'submit' => [
+                'prefilters' => [
+                    new ActionFilter\HttpMethod([ActionFilter\HttpMethod::METHOD_POST]),
+                    new ActionFilter\Csrf(),
+                ],
+                'postfilters' => [],
+            ],
+        ];
     }
 
     public function executeComponent(): void
@@ -137,7 +167,7 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
         $isDuplicate = $repository->hasRecent($request->phone);
 
         try {
-            $id = $repository->save($request, $this->getSiteId());
+            $id = $repository->save($request, $this->currentSiteId());
         } catch (Throwable $e) {
             $this->errors->setError(new Error('Не смогли сохранить заявку, попробуйте ещё раз.', 'save'));
 
@@ -146,7 +176,7 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
 
         // Дубль сохраняем, но менеджера им не дёргаем
         if ($this->arParams['SEND_MAIL'] && !$isDuplicate) {
-            (new Notifier($phones))->notify($request, $this->getSiteId());
+            (new Notifier($phones))->notify($request, $this->currentSiteId());
         }
 
         return ['id' => $id];
@@ -191,7 +221,7 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
         return (string) ($request->getRemoteAddress() ?: 'unknown');
     }
 
-    private function getSiteId(): string
+    private function currentSiteId(): string
     {
         return (string) (\Bitrix\Main\Context::getCurrent()->getSite() ?: 's1');
     }

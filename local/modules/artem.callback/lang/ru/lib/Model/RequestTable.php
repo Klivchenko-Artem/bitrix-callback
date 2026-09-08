@@ -1,0 +1,5 @@
+<?php
+
+$MESS['ARTEM_CALLBACK_STATUS_NEW'] = 'Новая';
+$MESS['ARTEM_CALLBACK_STATUS_DONE'] = 'Обработана';
+$MESS['ARTEM_CALLBACK_STATUS_SPAM'] = 'Спам';

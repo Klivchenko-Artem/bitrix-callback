@@ -1,58 +1,60 @@
 <?php
 
 use Bitrix\Main\Loader;
+use Bitrix\Main\Localization\Loc;
 use Artem\Callback\Config;
 
 if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true) {
     die();
 }
 
+Loc::loadMessages(__FILE__);
 Loader::includeModule('artem.callback');
 
 $arComponentParameters = [
     'GROUPS' => [
-        'CALLBACK' => ['NAME' => 'Обратный звонок'],
+        'CALLBACK' => ['NAME' => Loc::getMessage('ARTEM_CALLBACK_P_GROUP')],
     ],
     'PARAMETERS' => [
         'TITLE' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Заголовок формы',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_TITLE'),
             'TYPE' => 'STRING',
-            'DEFAULT' => 'Заказать звонок',
+            'DEFAULT' => Loc::getMessage('ARTEM_CALLBACK_P_DEF_TITLE'),
         ],
         'BUTTON_TEXT' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Надпись на кнопке',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_BUTTON'),
             'TYPE' => 'STRING',
-            'DEFAULT' => 'Жду звонка',
+            'DEFAULT' => Loc::getMessage('ARTEM_CALLBACK_P_DEF_BUTTON'),
         ],
         'SUCCESS_TEXT' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Текст после отправки',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_SUCCESS'),
             'TYPE' => 'STRING',
-            'DEFAULT' => 'Спасибо, перезвоним в ближайшее время.',
+            'DEFAULT' => Loc::getMessage('ARTEM_CALLBACK_P_DEF_SUCCESS'),
         ],
         'SHOW_COMMENT' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Показывать поле комментария',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_SHOW_COMMENT'),
             'TYPE' => 'CHECKBOX',
             'DEFAULT' => 'Y',
         ],
         'SHOW_SLOTS' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Показывать выбор удобного времени',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_SHOW_SLOTS'),
             'TYPE' => 'CHECKBOX',
             'DEFAULT' => 'Y',
         ],
         'CONSENT_URL' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Ссылка на политику обработки данных',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_CONSENT_URL'),
             'TYPE' => 'STRING',
             'DEFAULT' => '/policy/',
         ],
         'SEND_MAIL' => [
             'PARENT' => 'CALLBACK',
-            'NAME' => 'Отправлять письмо менеджеру',
+            'NAME' => Loc::getMessage('ARTEM_CALLBACK_P_SEND_MAIL'),
             'TYPE' => 'CHECKBOX',
             'DEFAULT' => 'Y',
         ],

@@ -18,6 +18,15 @@ final class CacheRateStorage implements RateStorageInterface
     private const CACHE_DIR = '/artem.callback/rate';
     private const CACHE_TTL = 86400;
 
+    /**
+     * Сбросить все счётчики — нужно при удалении модуля,
+     * иначе в кеше остаётся мусор от снесённого модуля.
+     */
+    public static function clearAll(): void
+    {
+        Cache::createInstance()->cleanDir(self::CACHE_DIR);
+    }
+
     public function get(string $key): int
     {
         $item = $this->read($key);

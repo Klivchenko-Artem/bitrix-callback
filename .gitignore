@@ -1,5 +1,6 @@
 # Ядро Битрикса и всё, что ставится дистрибутивом, в репозиторий не кладём
 /www/
+/local/components/
 /dist/
 /vendor/
 /.phpunit.cache/

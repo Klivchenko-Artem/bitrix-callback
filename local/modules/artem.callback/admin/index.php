@@ -2,6 +2,7 @@
 
 use Bitrix\Main\Application;
 use Bitrix\Main\Loader;
+use Bitrix\Main\Localization\Loc;
 use Artem\Callback\Bitrix\RequestRepository;
 use Artem\Callback\Model\RequestTable;
 use Artem\Callback\Service\PhoneNormalizer;
@@ -11,11 +12,13 @@ require $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_b
 /** @var CMain $APPLICATION */
 /** @var CUser $USER */
 
+Loc::loadMessages(__FILE__);
+
 $moduleId = 'artem.callback';
 $rights = $APPLICATION->GetGroupRight($moduleId);
 
 if ($rights === 'D') {
-    $APPLICATION->AuthForm('Доступ закрыт');
+    $APPLICATION->AuthForm(Loc::getMessage('ARTEM_CALLBACK_ADMIN_ACCESS_DENIED'));
 }
 
 Loader::includeModule($moduleId);
@@ -32,9 +35,9 @@ $list = new CAdminUiList($tableId, $sorting);
 $filter = [];
 $list->AddFilter(
     [
-        ['id' => 'PHONE', 'name' => 'Телефон', 'filterable' => '%'],
-        ['id' => 'NAME', 'name' => 'Имя', 'filterable' => '%'],
-        ['id' => 'STATUS', 'name' => 'Статус', 'type' => 'list', 'items' => $statuses, 'filterable' => '='],
+        ['id' => 'PHONE', 'name' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_F_PHONE'), 'filterable' => '%'],
+        ['id' => 'NAME', 'name' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_F_NAME'), 'filterable' => '%'],
+        ['id' => 'STATUS', 'name' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_F_STATUS'), 'type' => 'list', 'items' => $statuses, 'filterable' => '='],
     ],
     $filter
 );
@@ -68,21 +71,24 @@ if ($canEdit && ($ids = $list->GroupAction())) {
                 default => null,
             };
         } catch (Throwable $e) {
-            $list->AddGroupError('Заявка #' . $id . ': ' . $e->getMessage(), $id);
+            $list->AddGroupError(
+                (string) Loc::getMessage('ARTEM_CALLBACK_ADMIN_ROW_ERROR', ['#ID#' => $id, '#ERROR#' => $e->getMessage()]),
+                $id
+            );
         }
     }
 }
 
 $list->AddHeaders([
     ['id' => 'ID', 'content' => 'ID', 'sort' => 'ID', 'default' => true],
-    ['id' => 'CREATED_AT', 'content' => 'Когда', 'sort' => 'CREATED_AT', 'default' => true],
-    ['id' => 'NAME', 'content' => 'Имя', 'sort' => 'NAME', 'default' => true],
-    ['id' => 'PHONE', 'content' => 'Телефон', 'sort' => 'PHONE', 'default' => true],
-    ['id' => 'SLOT', 'content' => 'Когда звонить', 'default' => true],
-    ['id' => 'COMMENT', 'content' => 'Комментарий', 'default' => true],
-    ['id' => 'STATUS', 'content' => 'Статус', 'sort' => 'STATUS', 'default' => true],
-    ['id' => 'PAGE_URL', 'content' => 'Страница', 'default' => false],
-    ['id' => 'CLIENT_IP', 'content' => 'IP', 'default' => false],
+    ['id' => 'CREATED_AT', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_CREATED'), 'sort' => 'CREATED_AT', 'default' => true],
+    ['id' => 'NAME', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_F_NAME'), 'sort' => 'NAME', 'default' => true],
+    ['id' => 'PHONE', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_F_PHONE'), 'sort' => 'PHONE', 'default' => true],
+    ['id' => 'SLOT', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_SLOT'), 'default' => true],
+    ['id' => 'COMMENT', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_COMMENT'), 'default' => true],
+    ['id' => 'STATUS', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_F_STATUS'), 'sort' => 'STATUS', 'default' => true],
+    ['id' => 'PAGE_URL', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_PAGE'), 'default' => false],
+    ['id' => 'CLIENT_IP', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_IP'), 'default' => false],
 ]);
 
 $query = RequestTable::query()
@@ -100,7 +106,7 @@ while ($row = $result->GetNext()) {
     $item->AddViewField('STATUS', $statuses[$row['STATUS']] ?? $row['STATUS']);
 
     if ($row['PAGE_URL'] !== '') {
-        $item->AddViewField('PAGE_URL', '<a href="' . htmlspecialcharsbx($row['PAGE_URL']) . '" target="_blank">открыть</a>');
+        $item->AddViewField('PAGE_URL', '<a href="' . htmlspecialcharsbx($row['PAGE_URL']) . '" target="_blank">' . Loc::getMessage('ARTEM_CALLBACK_ADMIN_PAGE_OPEN') . '</a>');
     }
 
     if ($canEdit) {
@@ -108,28 +114,28 @@ while ($row = $result->GetNext()) {
             [
                 'ICON' => 'edit',
                 'DEFAULT' => true,
-                'TEXT' => 'Обработана',
-                'ACTION' => $list->ActionRedirect('artem_callback_index.php?action=mark_done&id=' . $row['ID'] . '&' . bitrix_sessid_get()),
+                'TEXT' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_ACT_DONE'),
+                'ACTION' => $list->ActionDoGroup($row['ID'], 'mark_done'),
             ],
             [
                 'ICON' => 'delete',
-                'TEXT' => 'Удалить',
-                'ACTION' => "if(confirm('Удалить заявку?')) " . $list->ActionDoGroup($row['ID'], 'delete'),
+                'TEXT' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_ACT_DELETE'),
+                'ACTION' => "if(confirm('" . CUtil::JSEscape((string) Loc::getMessage('ARTEM_CALLBACK_ADMIN_ACT_DELETE_CONFIRM')) . "')) " . $list->ActionDoGroup($row['ID'], 'delete'),
             ],
         ]);
     }
 }
 
 $list->AddGroupActionTable([
-    'mark_done' => 'Отметить обработанными',
-    'mark_new' => 'Вернуть в новые',
-    'mark_spam' => 'Отметить спамом',
-    'delete' => 'Удалить',
+    'mark_done' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_GA_DONE'),
+    'mark_new' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_GA_NEW'),
+    'mark_spam' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_GA_SPAM'),
+    'delete' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_GA_DELETE'),
 ]);
 
 $list->CheckListMode();
 
-$APPLICATION->SetTitle('Заявки на обратный звонок');
+$APPLICATION->SetTitle((string) Loc::getMessage('ARTEM_CALLBACK_ADMIN_TITLE'));
 
 require $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 

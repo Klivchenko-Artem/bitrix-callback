@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Artem\Callback\Model;
 
+use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ORM\Data\DataManager;
 use Bitrix\Main\ORM\Fields\DatetimeField;
 use Bitrix\Main\ORM\Fields\EnumField;
@@ -65,10 +66,12 @@ final class RequestTable extends DataManager
      */
     public static function getStatusList(): array
     {
+        Loc::loadMessages(__FILE__);
+
         return [
-            self::STATUS_NEW => 'Новая',
-            self::STATUS_DONE => 'Обработана',
-            self::STATUS_SPAM => 'Спам',
+            self::STATUS_NEW => (string) Loc::getMessage('ARTEM_CALLBACK_STATUS_NEW'),
+            self::STATUS_DONE => (string) Loc::getMessage('ARTEM_CALLBACK_STATUS_DONE'),
+            self::STATUS_SPAM => (string) Loc::getMessage('ARTEM_CALLBACK_STATUS_SPAM'),
         ];
     }
 }

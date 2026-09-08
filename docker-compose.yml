@@ -7,8 +7,9 @@ services:
       BITRIX_DIST_URL: ${BITRIX_DIST_URL:-https://www.1c-bitrix.ru/download/start_encode.tar.gz}
     volumes:
       - www:/var/www/html
-      # Код проекта живёт в репозитории и подкладывается поверх ядра
-      - ./local:/var/www/html/local
+      # В репозитории лежит только сам модуль; всё, что он ставит
+      # (компонент, демо-страница), остаётся внутри тома с ядром
+      - ./local/modules/artem.callback:/var/www/html/local/modules/artem.callback
     depends_on:
       mysql:
         condition: service_healthy
@@ -19,7 +20,7 @@ services:
       - "8080:80"
     volumes:
       - www:/var/www/html
-      - ./local:/var/www/html/local
+      - ./local/modules/artem.callback:/var/www/html/local/modules/artem.callback
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - php

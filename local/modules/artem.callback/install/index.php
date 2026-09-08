@@ -5,6 +5,7 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Loader;
 use Bitrix\Main\ModuleManager;
 use Bitrix\Main\Config\Option;
+use Artem\Callback\Bitrix\CacheRateStorage;
 use Artem\Callback\Model\RequestTable;
 
 Loc::loadMessages(__FILE__);
@@ -56,6 +57,10 @@ class artem_callback extends CModule
     {
         global $APPLICATION;
 
+        // Без этого на шаге удаления не автозагрузятся классы модуля,
+        // и UnInstallDB упадёт на первом же обращении к ORM.
+        Loader::includeModule($this->MODULE_ID);
+
         $request = Application::getInstance()->getContext()->getRequest();
 
         if ((int) $request->get('step') < 2) {
@@ -104,6 +109,7 @@ class artem_callback extends CModule
             }
 
             Option::delete($this->MODULE_ID);
+            CacheRateStorage::clearAll();
         }
 
         return true;

@@ -8,6 +8,8 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true) {
     die();
 }
 
+Loc::loadMessages(__FILE__);
+
 if ($APPLICATION->GetGroupRight('artem.callback') === 'D') {
     return false;
 }
@@ -15,17 +17,17 @@ if ($APPLICATION->GetGroupRight('artem.callback') === 'D') {
 return [
     'parent_menu' => 'global_menu_services',
     'sort' => 300,
-    'text' => Loc::getMessage('ARTEM_CALLBACK_MENU_TEXT') ?: 'Обратный звонок',
-    'title' => Loc::getMessage('ARTEM_CALLBACK_MENU_TITLE') ?: 'Заявки на обратный звонок',
+    'text' => Loc::getMessage('ARTEM_CALLBACK_MENU_TEXT'),
+    'title' => Loc::getMessage('ARTEM_CALLBACK_MENU_TITLE'),
     'icon' => 'artem_callback_menu_icon',
     'page_icon' => 'artem_callback_page_icon',
     'items_id' => 'menu_artem_callback',
     'items' => [
         [
-            'text' => 'Заявки',
+            'text' => Loc::getMessage('ARTEM_CALLBACK_MENU_LIST'),
             'url' => 'artem_callback_index.php?lang=' . LANGUAGE_ID,
             'more_url' => ['artem_callback_index.php'],
-            'title' => 'Список заявок на обратный звонок',
+            'title' => Loc::getMessage('ARTEM_CALLBACK_MENU_LIST_TITLE'),
         ],
     ],
 ];
