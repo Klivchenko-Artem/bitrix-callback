@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Тесты и проверка синтаксиса
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Поднять PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring
+          coverage: none
+
+      - name: Кеш зависимостей
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Установить зависимости
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Проверить синтаксис всех файлов модуля
+        run: find local -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Прогнать тесты
+        run: composer test

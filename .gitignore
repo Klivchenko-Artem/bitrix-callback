@@ -1,0 +1,10 @@
+# Ядро Битрикса и всё, что ставится дистрибутивом, в репозиторий не кладём
+/www/
+/dist/
+/vendor/
+/.phpunit.cache/
+.phpunit.result.cache
+/docker/mysql-data/
+.env
+.idea/
+.vscode/

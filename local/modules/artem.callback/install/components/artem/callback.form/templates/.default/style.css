@@ -1,0 +1,70 @@
+.artem-callback {
+    max-width: 420px;
+    padding: 24px;
+    border: 1px solid #e3e6ea;
+    border-radius: 12px;
+    background: #fff;
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+.artem-callback__title {
+    margin: 0 0 16px;
+    font-size: 20px;
+}
+
+.artem-callback__field {
+    display: block;
+    margin-bottom: 14px;
+}
+
+.artem-callback__label {
+    display: block;
+    margin-bottom: 4px;
+    color: #6b7684;
+    font-size: 13px;
+}
+
+.artem-callback__input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #ccd3dc;
+    border-radius: 8px;
+    font: inherit;
+}
+
+.artem-callback__input:focus {
+    border-color: #2f80ed;
+    outline: none;
+}
+
+.artem-callback__consent {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    color: #6b7684;
+    font-size: 13px;
+}
+
+.artem-callback__submit {
+    width: 100%;
+}
+
+.artem-callback__error,
+.artem-callback__common-error {
+    display: none;
+    margin-top: 4px;
+    color: #d64242;
+    font-size: 13px;
+}
+
+.artem-callback__error--visible {
+    display: block;
+}
+
+.artem-callback__success {
+    padding: 12px 0;
+    color: #1a8245;
+}
