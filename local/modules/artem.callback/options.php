@@ -21,6 +21,17 @@ $request = Application::getInstance()->getContext()->getRequest();
 $rightsToEdit = $APPLICATION->GetGroupRight($moduleId) >= 'W';
 $message = null;
 
+// Границы числовых настроек.
+//
+// Без них ноль в «заявок с адреса» глушил форму на всём сайте: лимитер
+// сравнивает «сколько уже было < сколько можно», и при нуле это всегда ложь.
+// Пустое поле number тоже приезжает нулём, так что промахнуться легко.
+$limits = [
+    'rate_limit' => ['min' => 1, 'max' => 1000, 'default' => 3],
+    'rate_period' => ['min' => 1, 'max' => 1440, 'default' => 60],
+    'max_comment' => ['min' => 10, 'max' => 2000, 'default' => 1000],
+];
+
 $fields = [
     'email_to' => ['type' => 'text', 'size' => 50, 'label' => 'ARTEM_CALLBACK_OPT_EMAIL_TO'],
     'rate_limit' => ['type' => 'number', 'size' => 5, 'label' => 'ARTEM_CALLBACK_OPT_RATE_LIMIT'],
@@ -36,9 +47,26 @@ if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
         Option::delete($moduleId);
     } else {
         foreach ($fields as $name => $field) {
-            $value = $field['type'] === 'checkbox'
-                ? ($request->getPost($name) === 'Y' ? 'Y' : 'N')
-                : (string) $request->getPost($name);
+            if ($field['type'] === 'checkbox') {
+                Option::set($moduleId, $name, $request->getPost($name) === 'Y' ? 'Y' : 'N');
+
+                continue;
+            }
+
+            $value = (string) $request->getPost($name);
+
+            // Числовые настройки прижимаем к допустимым границам, а не пишем
+            // как есть: 0 и пустое поле означали неработающую форму или
+            // отключённую защиту от спама — и то и другое молча
+            if (isset($limits[$name])) {
+                $number = (int) $value;
+
+                if ($number < $limits[$name]['min'] || $number > $limits[$name]['max']) {
+                    $number = $limits[$name]['default'];
+                }
+
+                $value = (string) $number;
+            }
 
             Option::set($moduleId, $name, $value);
         }

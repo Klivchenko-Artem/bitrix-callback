@@ -40,12 +40,35 @@ class artem_callback extends CModule
     {
         global $APPLICATION;
 
-        ModuleManager::registerModule($this->MODULE_ID);
+        // Регистрация — последним шагом, а не первым.
+        //
+        // Loader::includeModule смотрит на файловую систему, а не на b_module,
+        // поэтому классы доступны и до регистрации. Зато при прежнем порядке
+        // упавшее создание таблицы (нет прав на CREATE, остался хвост
+        // от прошлой установки) оставляло модуль зарегистрированным: компонент
+        // на сайте «работал», молча терял заявки, а админка падала
+        // на отсутствующей таблице.
         Loader::includeModule($this->MODULE_ID);
 
-        $this->InstallDB();
-        $this->InstallEvents();
-        $this->InstallFiles();
+        try {
+            $this->InstallDB();
+            $this->InstallEvents();
+            $this->InstallFiles();
+        } catch (\Throwable $e) {
+            // Откатываем то, что успели создать, и говорим, что случилось
+            $this->UnInstallFiles();
+            $this->UnInstallEvents();
+
+            $APPLICATION->ThrowException(
+                Loc::getMessage('ARTEM_CALLBACK_INSTALL_FAILED') ?: 'Установка не удалась: '.$e->getMessage()
+            );
+
+            AddMessage2Log('artem.callback: установка не удалась: '.$e->getMessage(), 'artem.callback');
+
+            return;
+        }
+
+        ModuleManager::registerModule($this->MODULE_ID);
 
         $APPLICATION->IncludeAdminFile(
             Loc::getMessage('ARTEM_CALLBACK_INSTALL_TITLE'),
@@ -91,6 +114,12 @@ class artem_callback extends CModule
         if (!$connection->isTableExists(RequestTable::getTableName())) {
             RequestTable::getEntity()->createDbTable();
             $connection->createIndex(RequestTable::getTableName(), 'ix_artem_callback_status', ['STATUS', 'CREATED_AT']);
+
+            // Индекс под проверку дублей и подсчёт заявок с адреса: оба запроса
+            // идут на каждую отправку формы, а без индекса это full scan
+            // по таблице, которая не чистится никогда
+            $connection->createIndex(RequestTable::getTableName(), 'ix_artem_callback_phone', ['PHONE', 'CREATED_AT']);
+            $connection->createIndex(RequestTable::getTableName(), 'ix_artem_callback_ip', ['CLIENT_IP', 'CREATED_AT']);
         }
 
         return true;
@@ -101,15 +130,22 @@ class artem_callback extends CModule
      */
     public function UnInstallDB(array $params = []): bool
     {
+        // Настройки и счётчики убираем всегда.
+        //
+        // Галка на шаге удаления обещает сохранить *заявки*, а не конфигурацию.
+        // С прежним поведением настройки оставались в b_option, и при повторной
+        // установке всплывали старые значения — включая нулевой лимит,
+        // от которого форма молчит; человек потом долго ищет, почему
+        // свежепоставленный модуль не принимает заявки.
+        Option::delete($this->MODULE_ID);
+        CacheRateStorage::clearAll();
+
         if (empty($params['keepData'])) {
             $connection = Application::getConnection();
 
             if ($connection->isTableExists(RequestTable::getTableName())) {
                 $connection->dropTable(RequestTable::getTableName());
             }
-
-            Option::delete($this->MODULE_ID);
-            CacheRateStorage::clearAll();
         }
 
         return true;
@@ -159,7 +195,10 @@ class artem_callback extends CModule
             CEventMessage::Delete((int) $template['ID']);
         }
 
-        CEventType::Delete(self::MAIL_EVENT_TYPE);
+        // Массив-фильтр, а не строка: скалярный аргумент ядро принимает за ID
+        // и делает intval('ARTEM_CALLBACK_NEW') = 0, то есть не удаляет ничего,
+        // и тип письма оставался в системе после удаления модуля
+        CEventType::Delete(['EVENT_NAME' => self::MAIL_EVENT_TYPE]);
 
         return true;
     }
@@ -195,7 +234,13 @@ class artem_callback extends CModule
     public function UnInstallFiles(): bool
     {
         DeleteDirFilesEx('/local/components/artem/callback.form');
-        DeleteDirFilesEx('/callback');
+
+        // Демо-страницу удаляем по файлам, а не разделом целиком: путь
+        // предсказуемый, и клиент вполне мог дописать в /callback свои
+        // страницы или картинки — сносить их без спроса нельзя
+        foreach (glob(__DIR__.'/demo/*') ?: [] as $file) {
+            DeleteDirFilesEx('/callback/'.basename($file));
+        }
 
         foreach (glob(__DIR__ . '/admin/*.php') ?: [] as $file) {
             DeleteDirFilesEx('/bitrix/admin/' . basename($file));

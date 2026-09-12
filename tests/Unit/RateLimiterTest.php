@@ -50,4 +50,58 @@ final class RateLimiterTest extends TestCase
         $limiter->hit('1.2.3.4');
         self::assertSame(1, $limiter->leftFor('1.2.3.4'));
     }
+
+    /**
+     * Нулевой лимит означал форму, которая не принимает ничего.
+     *
+     * Настройки модуля писались из POST без проверки, а админ мог поставить 0
+     * в смысле «без ограничений» (или просто очистить поле — пустое number
+     * приезжает нулём). Границы теперь прижимаются в options.php, но само
+     * поведение лимитера тоже стоит зафиксировать: с нулём он не пропускает
+     * ничего, и полагаться на «авось не поставят» нельзя.
+     */
+    public function testZeroLimitBlocksEverything(): void
+    {
+        $limiter = new RateLimiter(new ArrayRateStorage(), limit: 0, periodSeconds: 3600);
+
+        self::assertFalse($limiter->hit('1.2.3.4'));
+        self::assertSame(0, $limiter->leftFor('1.2.3.4'));
+    }
+
+    /** Нулевой период — окно, которое протухает мгновенно. */
+    public function testZeroPeriodMeansNoLimitAtAll(): void
+    {
+        $storage = new ArrayRateStorage();
+        $limiter = new RateLimiter($storage, limit: 1, periodSeconds: 0);
+
+        self::assertTrue($limiter->hit('1.2.3.4'));
+
+        // Срок истёк в тот же миг, поэтому счётчик снова нулевой: защиты нет.
+        // Ровно поэтому период в настройках не может быть меньше минуты
+        self::assertTrue($limiter->hit('1.2.3.4'));
+    }
+
+    /**
+     * Окно фиксированное, а не скользящее.
+     *
+     * Третья попытка внутри окна не должна сдвигать срок: иначе посетитель,
+     * который долбит форму каждые пять минут, не дождётся сброса никогда.
+     */
+    public function testWindowIsFixedNotSliding(): void
+    {
+        $storage = new ArrayRateStorage();
+        $limiter = new RateLimiter($storage, limit: 2, periodSeconds: 600);
+
+        self::assertTrue($limiter->hit('1.2.3.4'));
+
+        $storage->travel(300);
+
+        self::assertTrue($limiter->hit('1.2.3.4'));
+        self::assertFalse($limiter->hit('1.2.3.4'));
+
+        // От первой попытки прошло 600 секунд — окно кончилось
+        $storage->travel(301);
+
+        self::assertTrue($limiter->hit('1.2.3.4'));
+    }
 }

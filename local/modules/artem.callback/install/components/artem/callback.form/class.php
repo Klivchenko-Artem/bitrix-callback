@@ -7,7 +7,7 @@ use Bitrix\Main\ErrorCollection;
 use Bitrix\Main\Errorable;
 use Bitrix\Main\Loader;
 use Bitrix\Main\LoaderException;
-use Artem\Callback\Bitrix\CacheRateStorage;
+use Artem\Callback\Bitrix\DbRateStorage;
 use Artem\Callback\Bitrix\Notifier;
 use Artem\Callback\Bitrix\RequestRepository;
 use Artem\Callback\CallbackRequest;
@@ -28,6 +28,14 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true) {
  */
 class CallbackFormComponent extends CBitrixComponent implements Controllerable, Errorable
 {
+    /**
+     * Потолок длины адреса страницы.
+     *
+     * Ровно столько разрешает колонка PAGE_URL: без обрезки заявка с длинной
+     * рекламной ссылкой не проходила валидацию ORM и терялась.
+     */
+    private const MAX_PAGE_URL_LENGTH = 500;
+
     private ErrorCollection $errors;
 
     public function __construct($component = null)
@@ -123,10 +131,18 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
 
         $phones = new PhoneNormalizer();
 
+        // Комментарий требуем только если поле вообще показано.
+        //
+        // Настройка модуля и параметр компонента жили независимо: при
+        // comment_required=Y и SHOW_COMMENT=N форма требовала то, чего
+        // на странице нет, и отправить её было нельзя вообще ничем —
+        // сообщение об ошибке падало в общий блок под формой без поля.
+        $commentShown = (bool) ($this->arParams['SHOW_COMMENT'] ?? true);
+
         $validator = new RequestValidator(
             $phones,
             Config::getSlots(),
-            Config::isOn('comment_required'),
+            $commentShown && Config::isOn('comment_required'),
             Config::getInt('max_comment'),
             Config::isOn('consent_required'),
         );
@@ -142,10 +158,20 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
         }
 
         $clientIp = $this->getClientIp();
+        $periodSeconds = Config::getInt('rate_period') * 60;
+
+        // Считаем по таблице заявок, а не по кешу ядра.
+        //
+        // Кеш можно выключить в настройках главного модуля — и защита
+        // от спама исчезала молча: initCache всегда возвращал false,
+        // счётчик всегда был нулём, и лимит не срабатывал никогда.
+        $storage = new DbRateStorage($periodSeconds);
+        $storage->remember('callback:rate:'.md5($clientIp), $clientIp);
+
         $limiter = new RateLimiter(
-            new CacheRateStorage(),
+            $storage,
             Config::getInt('rate_limit'),
-            Config::getInt('rate_period') * 60,
+            $periodSeconds,
         );
 
         if (!$limiter->hit($clientIp)) {
@@ -159,7 +185,13 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
             phone: (string) $phones->normalize((string) $fields['phone']),
             comment: trim((string) ($fields['comment'] ?? '')),
             slot: trim((string) ($fields['slot'] ?? '')),
-            pageUrl: trim((string) ($fields['pageUrl'] ?? '')),
+            // Адрес страницы приходит из window.location.href, а в колонке
+            // стоит потолок в 500 символов: приход с рекламы, где в ссылке
+            // utm, gclid и fbclid, легко перебирал его — валидатор отбивал
+            // запись, и заявка терялась ровно на самом дорогом трафике.
+            // Заодно отсекаем всё, что не http и не https: этот адрес
+            // подставляется ссылкой в админке
+            pageUrl: self::sanitizePageUrl((string) ($fields['pageUrl'] ?? '')),
             clientIp: $clientIp,
         );
 
@@ -169,6 +201,10 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
         try {
             $id = $repository->save($request, $this->currentSiteId());
         } catch (Throwable $e) {
+            // В журнал обязательно: молчаливый catch превращал любую поломку
+            // в «сайт полгода не принимает заявки, и никто не знает»
+            AddMessage2Log('artem.callback: заявка не сохранилась: '.$e->getMessage(), 'artem.callback');
+
             $this->errors->setError(new Error('Не смогли сохранить заявку, попробуйте ещё раз.', 'save'));
 
             return null;
@@ -176,7 +212,16 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
 
         // Дубль сохраняем, но менеджера им не дёргаем
         if ($this->arParams['SEND_MAIL'] && !$isDuplicate) {
-            (new Notifier($phones))->notify($request, $this->currentSiteId());
+            $sent = (new Notifier($phones))->notify($request, $this->currentSiteId());
+
+            // Письмо не ушло — посетителю отвечаем «перезвоним», а менеджер
+            // о заявке не знает. Такое молчание должно быть видно в журнале
+            if (!$sent) {
+                AddMessage2Log(
+                    'artem.callback: письмо по заявке '.$id.' не отправлено (проверьте настройки модуля)',
+                    'artem.callback'
+                );
+            }
         }
 
         return ['id' => $id];
@@ -214,11 +259,49 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
         }
     }
 
+    /**
+     * Адрес посетителя с оглядкой на доверенные прокси.
+     *
+     * Голый REMOTE_ADDR за Cloudflare или балансировщиком — это один и тот же
+     * адрес для всех, то есть лимит из трёх заявок в час на весь сайт.
+     * Bitrix\Main\Service\GeoIp\Manager умеет отдавать настоящий адрес,
+     * опираясь на настройку доверенных прокси в ядре.
+     */
     private function getClientIp(): string
     {
+        if (class_exists(\Bitrix\Main\Service\GeoIp\Manager::class)) {
+            $real = \Bitrix\Main\Service\GeoIp\Manager::getRealIp();
+
+            if (is_string($real) && $real !== '') {
+                return $real;
+            }
+        }
+
         $request = \Bitrix\Main\Context::getCurrent()->getRequest();
 
         return (string) ($request->getRemoteAddress() ?: 'unknown');
+    }
+
+    /**
+     * Приводит адрес страницы к тому, что можно и записать, и показать ссылкой.
+     */
+    private static function sanitizePageUrl(string $url): string
+    {
+        $url = trim($url);
+
+        if ($url === '') {
+            return '';
+        }
+
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+
+        // javascript: и data: в href админки — это выполнение кода в сессии
+        // администратора, когда он нажмёт «открыть»
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return '';
+        }
+
+        return mb_substr($url, 0, self::MAX_PAGE_URL_LENGTH);
     }
 
     private function currentSiteId(): string

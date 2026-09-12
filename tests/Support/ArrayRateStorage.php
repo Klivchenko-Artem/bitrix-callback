@@ -31,8 +31,17 @@ final class ArrayRateStorage implements RateStorageInterface
 
     public function increment(string $key, int $ttl): int
     {
-        $count = $this->get($key) + 1;
-        $this->items[$key] = ['count' => $count, 'expires' => $this->now + $ttl];
+        $item = $this->items[$key] ?? null;
+        $alive = $item !== null && $item['expires'] > $this->now;
+
+        // Окно фиксированное: срок ставится при первом попадании и дальше
+        // не сдвигается. Раньше дубль продлевал его на каждом инкременте,
+        // то есть вёл себя скользящим окном — не так, как боевое хранилище,
+        // и тест сброса проверял поведение, которого в бою нет.
+        $count = $alive ? $item['count'] + 1 : 1;
+        $expires = $alive ? $item['expires'] : $this->now + $ttl;
+
+        $this->items[$key] = ['count' => $count, 'expires' => $expires];
 
         return $count;
     }

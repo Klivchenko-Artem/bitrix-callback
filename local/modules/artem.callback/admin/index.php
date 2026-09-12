@@ -91,10 +91,19 @@ $list->AddHeaders([
     ['id' => 'CLIENT_IP', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_IP'), 'default' => false],
 ]);
 
+// Поле сортировки — только из белого списка.
+//
+// Раньше оно приходило из URL как есть, и artem_callback_index.php?by=XXX
+// кладло страницу необработанным ArgumentException вместо списка заявок.
+$sortableFields = ['ID', 'CREATED_AT', 'NAME', 'PHONE', 'STATUS', 'SLOT'];
+$sortField = in_array($sorting->getField(), $sortableFields, true)
+    ? $sorting->getField()
+    : 'ID';
+
 $query = RequestTable::query()
     ->setSelect(['*'])
     ->setFilter($filter)
-    ->setOrder([$sorting->getField() => $sorting->getOrder()]);
+    ->setOrder([$sortField => $sorting->getOrder()]);
 
 $result = new CAdminUiResult($query->exec(), $tableId);
 $result->NavStart();
@@ -105,8 +114,24 @@ while ($row = $result->GetNext()) {
     $item->AddViewField('PHONE', htmlspecialcharsbx($phones->format($row['PHONE']) ?? $row['PHONE']));
     $item->AddViewField('STATUS', $statuses[$row['STATUS']] ?? $row['STATUS']);
 
-    if ($row['PAGE_URL'] !== '') {
-        $item->AddViewField('PAGE_URL', '<a href="' . htmlspecialcharsbx($row['PAGE_URL']) . '" target="_blank">' . Loc::getMessage('ARTEM_CALLBACK_ADMIN_PAGE_OPEN') . '</a>');
+    // Ссылку собираем из «сырого» значения и проверяем схему.
+    //
+    // GetNext() уже прогнал поля через htmlspecialcharsEx, поэтому повторное
+    // экранирование ломало адреса с параметрами (&amp;amp;), а сама схема
+    // не проверялась вовсе: javascript: в href выполнялся в сессии
+    // администратора, стоило ему нажать «открыть».
+    $rawPageUrl = (string) ($row['~PAGE_URL'] ?? $row['PAGE_URL']);
+    $pageScheme = strtolower((string) parse_url($rawPageUrl, PHP_URL_SCHEME));
+
+    if ($rawPageUrl !== '' && in_array($pageScheme, ['http', 'https'], true)) {
+        $item->AddViewField(
+            'PAGE_URL',
+            '<a href="'.htmlspecialcharsbx($rawPageUrl).'" target="_blank" rel="noopener noreferrer">'
+                .Loc::getMessage('ARTEM_CALLBACK_ADMIN_PAGE_OPEN')
+                .'</a>'
+        );
+    } else {
+        $item->AddViewField('PAGE_URL', '');
     }
 
     if ($canEdit) {
