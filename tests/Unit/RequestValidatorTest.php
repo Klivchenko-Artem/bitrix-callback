@@ -65,7 +65,7 @@ final class RequestValidatorTest extends TestCase
      * Длина считается в символах, а не в байтах.
      *
      * Прежний тест брал 1001 кириллическую букву, то есть 2002 байта: замени
-     * mb_strlen на strlen — и он всё равно проходил, а живой человек получал
+     * mb_strlen на strlen, и он всё равно проходил, а живой человек получал
      * отказ на 600 символах при maxlength=1000 в разметке.
      */
     public function testCommentAtTheLimitIsAccepted(): void
@@ -75,7 +75,7 @@ final class RequestValidatorTest extends TestCase
         self::assertSame([], $errors);
     }
 
-    /** Имя тоже ограничено — и тоже в символах. */
+    /** Имя тоже ограничено, и тоже в символах. */
     public function testLimitsNameLength(): void
     {
         $long = $this->validator()->validate(['name' => str_repeat('я', 101)] + self::VALID);

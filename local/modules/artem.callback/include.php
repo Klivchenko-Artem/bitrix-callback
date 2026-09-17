@@ -12,7 +12,10 @@ Loader::registerAutoLoadClasses('artem.callback', [
     'Artem\Callback\Service\PhoneNormalizer' => 'lib/Service/PhoneNormalizer.php',
     'Artem\Callback\Service\RateLimiter' => 'lib/Service/RateLimiter.php',
     'Artem\Callback\Service\RequestValidator' => 'lib/Service/RequestValidator.php',
+    'Artem\Callback\Service\PageUrlSanitizer' => 'lib/Service/PageUrlSanitizer.php',
     'Artem\Callback\Bitrix\CacheRateStorage' => 'lib/Bitrix/CacheRateStorage.php',
+    'Artem\Callback\Bitrix\DbRateStorage' => 'lib/Bitrix/DbRateStorage.php',
+    'Artem\Callback\Bitrix\Log' => 'lib/Bitrix/Log.php',
     'Artem\Callback\Bitrix\Notifier' => 'lib/Bitrix/Notifier.php',
     'Artem\Callback\Bitrix\RequestRepository' => 'lib/Bitrix/RequestRepository.php',
 ]);

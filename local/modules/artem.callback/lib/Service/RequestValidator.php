@@ -8,7 +8,7 @@ namespace Artem\Callback\Service;
  * Проверяет то, что пришло из формы, до всякого Битрикса.
  *
  * Правила приходят из настроек компонента, поэтому валидатор ничего
- * не знает ни про инфоблоки, ни про $_POST — его можно гонять тестами.
+ * не знает ни про инфоблоки, ни про $_POST, поэтому его можно гонять тестами.
  */
 final class RequestValidator
 {
@@ -29,7 +29,7 @@ final class RequestValidator
     /**
      * @param array<string, mixed> $data
      *
-     * @return array<string, string> Ошибки по полям, пустой массив — всё хорошо
+     * @return array<string, string> Ошибки по полям, пустой массив, если всё хорошо
      */
     public function validate(array $data): array
     {

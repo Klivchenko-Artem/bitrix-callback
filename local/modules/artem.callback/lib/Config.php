@@ -8,7 +8,7 @@ use Bitrix\Main\Config\Option;
 
 /**
  * Настройки модуля из административной страницы, с разумными значениями
- * по умолчанию — чтобы компонент работал сразу после установки.
+ * по умолчанию, чтобы компонент работал сразу после установки.
  */
 final class Config
 {
@@ -29,9 +29,31 @@ final class Config
         return (string) Option::get(self::MODULE_ID, $name, self::DEFAULTS[$name] ?? '');
     }
 
+    /**
+     * Границы числовых настроек. Ноль в лимите глушил бы форму на всём сайте,
+     * поэтому значение за границей прижимается к ней и при чтении, и при записи.
+     */
+    public const LIMITS = [
+        'rate_limit' => ['min' => 1, 'max' => 1000],
+        'rate_period' => ['min' => 1, 'max' => 1440],
+        'max_comment' => ['min' => 10, 'max' => 2000],
+    ];
+
+    /** Столько вмещает колонка SLOT. */
+    public const MAX_SLOT_LENGTH = 50;
+
     public static function getInt(string $name): int
     {
-        return (int) self::get($name);
+        return self::clamp($name, (int) self::get($name));
+    }
+
+    public static function clamp(string $name, int $value): int
+    {
+        if (!isset(self::LIMITS[$name])) {
+            return $value;
+        }
+
+        return max(self::LIMITS[$name]['min'], min(self::LIMITS[$name]['max'], $value));
     }
 
     public static function isOn(string $name): bool
@@ -46,7 +68,10 @@ final class Config
     {
         $lines = preg_split('/\R/', self::get('slots')) ?: [];
 
-        return array_values(array_filter(array_map('trim', $lines), static fn (string $s): bool => $s !== ''));
+        return array_values(array_filter(
+            array_map('trim', $lines),
+            static fn (string $s): bool => $s !== '' && mb_strlen($s) <= self::MAX_SLOT_LENGTH
+        ));
     }
 
     /**

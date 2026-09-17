@@ -1,5 +1,6 @@
 <?php
 
+use Artem\Callback\Service\PageUrlSanitizer;
 use Bitrix\Main\Application;
 use Bitrix\Main\Loader;
 use Bitrix\Main\Localization\Loc;
@@ -91,7 +92,7 @@ $list->AddHeaders([
     ['id' => 'CLIENT_IP', 'content' => Loc::getMessage('ARTEM_CALLBACK_ADMIN_H_IP'), 'default' => false],
 ]);
 
-// Поле сортировки — только из белого списка.
+// Поле и направление сортировки только из белого списка.
 //
 // Раньше оно приходило из URL как есть, и artem_callback_index.php?by=XXX
 // кладло страницу необработанным ArgumentException вместо списка заявок.
@@ -99,11 +100,12 @@ $sortableFields = ['ID', 'CREATED_AT', 'NAME', 'PHONE', 'STATUS', 'SLOT'];
 $sortField = in_array($sorting->getField(), $sortableFields, true)
     ? $sorting->getField()
     : 'ID';
+$sortOrder = strtoupper((string) $sorting->getOrder()) === 'ASC' ? 'ASC' : 'DESC';
 
 $query = RequestTable::query()
     ->setSelect(['*'])
     ->setFilter($filter)
-    ->setOrder([$sortField => $sorting->getOrder()]);
+    ->setOrder([$sortField => $sortOrder]);
 
 $result = new CAdminUiResult($query->exec(), $tableId);
 $result->NavStart();
@@ -121,9 +123,8 @@ while ($row = $result->GetNext()) {
     // не проверялась вовсе: javascript: в href выполнялся в сессии
     // администратора, стоило ему нажать «открыть».
     $rawPageUrl = (string) ($row['~PAGE_URL'] ?? $row['PAGE_URL']);
-    $pageScheme = strtolower((string) parse_url($rawPageUrl, PHP_URL_SCHEME));
 
-    if ($rawPageUrl !== '' && in_array($pageScheme, ['http', 'https'], true)) {
+    if ($rawPageUrl !== '' && PageUrlSanitizer::isSafe($rawPageUrl)) {
         $item->AddViewField(
             'PAGE_URL',
             '<a href="'.htmlspecialcharsbx($rawPageUrl).'" target="_blank" rel="noopener noreferrer">'

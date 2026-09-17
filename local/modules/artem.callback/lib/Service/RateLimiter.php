@@ -9,7 +9,7 @@ use Artem\Callback\Contract\RateStorageInterface;
 /**
  * Не даёт слать заявки пачками с одного адреса.
  *
- * Форма открыта наружу без капчи, поэтому ограничение по IP —
+ * Форма открыта наружу без капчи, поэтому ограничение по IP это
  * единственное, что стоит между менеджером и ботом.
  */
 final class RateLimiter
@@ -23,7 +23,7 @@ final class RateLimiter
 
     public function isAllowed(string $clientKey): bool
     {
-        return $this->storage->get($this->key($clientKey)) < $this->limit;
+        return $this->storage->get($clientKey) < $this->limit;
     }
 
     /**
@@ -35,18 +35,13 @@ final class RateLimiter
             return false;
         }
 
-        $this->storage->increment($this->key($clientKey), $this->periodSeconds);
+        $this->storage->increment($clientKey, $this->periodSeconds);
 
         return true;
     }
 
     public function leftFor(string $clientKey): int
     {
-        return max(0, $this->limit - $this->storage->get($this->key($clientKey)));
-    }
-
-    private function key(string $clientKey): string
-    {
-        return 'callback:rate:' . md5($clientKey);
+        return max(0, $this->limit - $this->storage->get($clientKey));
     }
 }

@@ -1,6 +1,6 @@
 FROM php:8.2-fpm
 
-# Всё, что просит проверка системы Битрикса, плюс msmtp — письма уходят в Mailpit
+# Всё, что просит проверка системы Битрикса, плюс msmtp, через него письма уходят в Mailpit
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libfreetype6-dev libjpeg62-turbo-dev libpng-dev libwebp-dev \
         libzip-dev libicu-dev libxml2-dev libonig-dev \

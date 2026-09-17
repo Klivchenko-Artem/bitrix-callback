@@ -40,35 +40,42 @@ class artem_callback extends CModule
     {
         global $APPLICATION;
 
-        // Регистрация — последним шагом, а не первым.
-        //
-        // Loader::includeModule смотрит на файловую систему, а не на b_module,
-        // поэтому классы доступны и до регистрации. Зато при прежнем порядке
-        // упавшее создание таблицы (нет прав на CREATE, остался хвост
-        // от прошлой установки) оставляло модуль зарегистрированным: компонент
-        // на сайте «работал», молча терял заявки, а админка падала
-        // на отсутствующей таблице.
-        Loader::includeModule($this->MODULE_ID);
+        // includeModule отказывает незарегистрированному модулю, поэтому
+        // регистрируем сразу, а при сбое снимаем регистрацию вместе с остальным
+        ModuleManager::registerModule($this->MODULE_ID);
+
+        $filesInstalled = false;
 
         try {
+            if (!Loader::includeModule($this->MODULE_ID)) {
+                throw new \RuntimeException('модуль не подключился');
+            }
+
             $this->InstallDB();
             $this->InstallEvents();
-            $this->InstallFiles();
+            $filesInstalled = $this->InstallFiles();
         } catch (\Throwable $e) {
-            // Откатываем то, что успели создать, и говорим, что случилось
-            $this->UnInstallFiles();
+            if ($filesInstalled) {
+                $this->UnInstallFiles();
+            }
+
             $this->UnInstallEvents();
+            ModuleManager::unRegisterModule($this->MODULE_ID);
+
+            // Классы модуля тут могут быть недоступны, поэтому журнал ядра напрямую
+            CEventLog::Add([
+                'SEVERITY' => 'ERROR',
+                'AUDIT_TYPE_ID' => 'ARTEM_CALLBACK_ERROR',
+                'MODULE_ID' => $this->MODULE_ID,
+                'DESCRIPTION' => 'установка не удалась: '.$e->getMessage(),
+            ]);
 
             $APPLICATION->ThrowException(
                 Loc::getMessage('ARTEM_CALLBACK_INSTALL_FAILED') ?: 'Установка не удалась: '.$e->getMessage()
             );
 
-            AddMessage2Log('artem.callback: установка не удалась: '.$e->getMessage(), 'artem.callback');
-
             return;
         }
-
-        ModuleManager::registerModule($this->MODULE_ID);
 
         $APPLICATION->IncludeAdminFile(
             Loc::getMessage('ARTEM_CALLBACK_INSTALL_TITLE'),
@@ -110,16 +117,24 @@ class artem_callback extends CModule
     public function InstallDB(): bool
     {
         $connection = Application::getConnection();
+        $table = RequestTable::getTableName();
 
-        if (!$connection->isTableExists(RequestTable::getTableName())) {
+        if (!$connection->isTableExists($table)) {
             RequestTable::getEntity()->createDbTable();
-            $connection->createIndex(RequestTable::getTableName(), 'ix_artem_callback_status', ['STATUS', 'CREATED_AT']);
+        }
 
-            // Индекс под проверку дублей и подсчёт заявок с адреса: оба запроса
-            // идут на каждую отправку формы, а без индекса это full scan
-            // по таблице, которая не чистится никогда
-            $connection->createIndex(RequestTable::getTableName(), 'ix_artem_callback_phone', ['PHONE', 'CREATED_AT']);
-            $connection->createIndex(RequestTable::getTableName(), 'ix_artem_callback_ip', ['CLIENT_IP', 'CREATED_AT']);
+        // Индексы проверяются по одному: если прошлая установка упала после
+        // создания таблицы, повторная должна их доделать
+        $indexes = [
+            'ix_artem_callback_status' => ['STATUS', 'CREATED_AT'],
+            'ix_artem_callback_phone' => ['PHONE', 'CREATED_AT'],
+            'ix_artem_callback_ip' => ['CLIENT_IP', 'CREATED_AT'],
+        ];
+
+        foreach ($indexes as $name => $columns) {
+            if (!$connection->isIndexExists($table, $columns)) {
+                $connection->createIndex($table, $name, $columns);
+            }
         }
 
         return true;
@@ -134,7 +149,7 @@ class artem_callback extends CModule
         //
         // Галка на шаге удаления обещает сохранить *заявки*, а не конфигурацию.
         // С прежним поведением настройки оставались в b_option, и при повторной
-        // установке всплывали старые значения — включая нулевой лимит,
+        // установке всплывали старые значения, включая нулевой лимит,
         // от которого форма молчит; человек потом долго ищет, почему
         // свежепоставленный модуль не принимает заявки.
         Option::delete($this->MODULE_ID);
@@ -220,13 +235,15 @@ class artem_callback extends CModule
             true
         );
 
-        // Демонстрационная страница, чтобы форму было где посмотреть сразу после установки
-        CopyDirFiles(
-            __DIR__ . '/demo',
-            Application::getDocumentRoot() . '/callback',
-            false,
-            true
-        );
+        // Демо-страница, чтобы форму было где посмотреть сразу после установки.
+        // Кладём только если на сайте такой страницы ещё нет, и запоминаем это:
+        // удалять потом можно только свою
+        $demoPage = Application::getDocumentRoot().'/callback/index.php';
+
+        if (!file_exists($demoPage)) {
+            CopyDirFiles(__DIR__.'/demo', Application::getDocumentRoot().'/callback', false, true);
+            Option::set($this->MODULE_ID, 'demo_installed', 'Y');
+        }
 
         return true;
     }
@@ -235,11 +252,14 @@ class artem_callback extends CModule
     {
         DeleteDirFilesEx('/local/components/artem/callback.form');
 
-        // Демо-страницу удаляем по файлам, а не разделом целиком: путь
-        // предсказуемый, и клиент вполне мог дописать в /callback свои
-        // страницы или картинки — сносить их без спроса нельзя
-        foreach (glob(__DIR__.'/demo/*') ?: [] as $file) {
-            DeleteDirFilesEx('/callback/'.basename($file));
+        // Демо-страницу удаляем по файлам и только если ставили её сами:
+        // в /callback у клиента может лежать своя страница
+        if (Option::get($this->MODULE_ID, 'demo_installed') === 'Y') {
+            foreach (glob(__DIR__.'/demo/*') ?: [] as $file) {
+                DeleteDirFilesEx('/callback/'.basename($file));
+            }
+
+            Option::delete($this->MODULE_ID, ['name' => 'demo_installed']);
         }
 
         foreach (glob(__DIR__ . '/admin/*.php') ?: [] as $file) {

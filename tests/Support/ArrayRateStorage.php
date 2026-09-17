@@ -7,7 +7,7 @@ namespace Artem\Callback\Tests\Support;
 use Artem\Callback\Contract\RateStorageInterface;
 
 /**
- * Хранилище счётчиков в памяти — вместо кеша Битрикса в тестах.
+ * Хранилище счётчиков в памяти для тестов лимитера.
  */
 final class ArrayRateStorage implements RateStorageInterface
 {
@@ -34,10 +34,7 @@ final class ArrayRateStorage implements RateStorageInterface
         $item = $this->items[$key] ?? null;
         $alive = $item !== null && $item['expires'] > $this->now;
 
-        // Окно фиксированное: срок ставится при первом попадании и дальше
-        // не сдвигается. Раньше дубль продлевал его на каждом инкременте,
-        // то есть вёл себя скользящим окном — не так, как боевое хранилище,
-        // и тест сброса проверял поведение, которого в бою нет.
+        // Срок ставится при первом попадании и дальше не сдвигается
         $count = $alive ? $item['count'] + 1 : 1;
         $expires = $alive ? $item['expires'] : $this->now + $ttl;
 

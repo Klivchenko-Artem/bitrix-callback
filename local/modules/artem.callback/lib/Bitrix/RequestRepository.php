@@ -35,7 +35,7 @@ final class RequestRepository
     }
 
     /**
-     * Тот же телефон за последние N минут — почти всегда двойной клик,
+     * Тот же телефон за последние N минут почти всегда двойной клик,
      * а не второй вопрос. Менеджеру такое слать не надо.
      */
     public function hasRecent(string $phone, int $minutes = 5): bool

@@ -21,16 +21,7 @@ $request = Application::getInstance()->getContext()->getRequest();
 $rightsToEdit = $APPLICATION->GetGroupRight($moduleId) >= 'W';
 $message = null;
 
-// Границы числовых настроек.
-//
-// Без них ноль в «заявок с адреса» глушил форму на всём сайте: лимитер
-// сравнивает «сколько уже было < сколько можно», и при нуле это всегда ложь.
-// Пустое поле number тоже приезжает нулём, так что промахнуться легко.
-$limits = [
-    'rate_limit' => ['min' => 1, 'max' => 1000, 'default' => 3],
-    'rate_period' => ['min' => 1, 'max' => 1440, 'default' => 60],
-    'max_comment' => ['min' => 10, 'max' => 2000, 'default' => 1000],
-];
+$errors = [];
 
 $fields = [
     'email_to' => ['type' => 'text', 'size' => 50, 'label' => 'ARTEM_CALLBACK_OPT_EMAIL_TO'],
@@ -55,27 +46,34 @@ if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
 
             $value = (string) $request->getPost($name);
 
-            // Числовые настройки прижимаем к допустимым границам, а не пишем
-            // как есть: 0 и пустое поле означали неработающую форму или
-            // отключённую защиту от спама — и то и другое молча
-            if (isset($limits[$name])) {
-                $number = (int) $value;
+            // Пустое поле оставляем значением по умолчанию, остальное прижимаем
+            // к границам, чтобы 5000 стало 1000, а не молча превратилось в 3
+            if (isset(Config::LIMITS[$name])) {
+                $value = trim($value) === ''
+                    ? Config::DEFAULTS[$name]
+                    : (string) Config::clamp($name, (int) $value);
+            }
 
-                if ($number < $limits[$name]['min'] || $number > $limits[$name]['max']) {
-                    $number = $limits[$name]['default'];
+            // Слишком длинный интервал не влезет в колонку, и заявка с ним потеряется
+            if ($name === 'slots') {
+                foreach (preg_split('/\R/', $value) ?: [] as $slot) {
+                    if (mb_strlen(trim($slot)) > Config::MAX_SLOT_LENGTH) {
+                        $errors[] = 'Интервал длиннее '.Config::MAX_SLOT_LENGTH.' символов: '.trim($slot);
+                    }
                 }
 
-                $value = (string) $number;
+                if ($errors !== []) {
+                    continue;
+                }
             }
 
             Option::set($moduleId, $name, $value);
         }
     }
 
-    $message = new CAdminMessage([
-        'MESSAGE' => Loc::getMessage('ARTEM_CALLBACK_OPTIONS_SAVED'),
-        'TYPE' => 'OK',
-    ]);
+    $message = $errors === []
+        ? new CAdminMessage(['MESSAGE' => Loc::getMessage('ARTEM_CALLBACK_OPTIONS_SAVED'), 'TYPE' => 'OK'])
+        : new CAdminMessage(['MESSAGE' => implode('<br>', array_map('htmlspecialcharsbx', $errors)), 'TYPE' => 'ERROR']);
 }
 
 $tabControl = new CAdminTabControl('artemCallbackTabs', [

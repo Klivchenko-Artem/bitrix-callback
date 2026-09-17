@@ -4,34 +4,16 @@ declare(strict_types=1);
 
 namespace Artem\Callback\Tests\Unit;
 
+use Artem\Callback\Service\PageUrlSanitizer;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Приведение адреса страницы к безопасному виду.
- *
- * Логика лежит в компоненте (он не автозагружается вне Битрикса), поэтому
- * здесь повторяется её контракт: три правила, каждое из которых закрывает
- * свою находку ревью.
- */
 final class PageUrlSanitizerTest extends TestCase
 {
-    private const MAX_LENGTH = 500;
+    private const MAX_LENGTH = PageUrlSanitizer::MAX_LENGTH;
 
     private function sanitize(string $url): string
     {
-        $url = trim($url);
-
-        if ($url === '') {
-            return '';
-        }
-
-        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            return '';
-        }
-
-        return mb_substr($url, 0, self::MAX_LENGTH);
+        return PageUrlSanitizer::sanitize($url);
     }
 
     /** Длинная рекламная ссылка режется, а не теряет заявку. */

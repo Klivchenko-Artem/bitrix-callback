@@ -19,7 +19,7 @@ final class CacheRateStorage implements RateStorageInterface
     private const CACHE_TTL = 86400;
 
     /**
-     * Сбросить все счётчики — нужно при удалении модуля,
+     * Сбросить все счётчики. Нужно при удалении модуля,
      * иначе в кеше остаётся мусор от снесённого модуля.
      */
     public static function clearAll(): void
@@ -42,6 +42,7 @@ final class CacheRateStorage implements RateStorageInterface
         $count = $alive ? $item['count'] + 1 : 1;
         $expires = $alive ? $item['expires'] : time() + $ttl;
 
+        $key = self::cacheKey($key);
         $cache = Cache::createInstance();
         $cache->clean($key, self::CACHE_DIR);
         $cache->initCache(self::CACHE_TTL, $key, self::CACHE_DIR);
@@ -51,11 +52,17 @@ final class CacheRateStorage implements RateStorageInterface
         return $count;
     }
 
+    private static function cacheKey(string $key): string
+    {
+        return 'callback:rate:'.md5($key);
+    }
+
     /**
      * @return array{count: int, expires: int}|null
      */
     private function read(string $key): ?array
     {
+        $key = self::cacheKey($key);
         $cache = Cache::createInstance();
 
         if (!$cache->initCache(self::CACHE_TTL, $key, self::CACHE_DIR)) {
