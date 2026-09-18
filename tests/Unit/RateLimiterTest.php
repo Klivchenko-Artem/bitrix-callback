@@ -31,7 +31,7 @@ final class RateLimiterTest extends TestCase
 
     public function testForgetsAfterPeriod(): void
     {
-        $storage = new ArrayRateStorage();
+        $storage = new ArrayRateStorage(windowSeconds: 60);
         $limiter = new RateLimiter($storage, limit: 1, periodSeconds: 60);
 
         self::assertTrue($limiter->hit('1.2.3.4'));
@@ -68,16 +68,39 @@ final class RateLimiterTest extends TestCase
         self::assertSame(0, $limiter->leftFor('1.2.3.4'));
     }
 
-    /** Нулевой период: окно, которое протухает мгновенно. */
-    public function testZeroPeriodMeansNoLimitAtAll(): void
+    /**
+     * Окно скользящее: попытка выпадает из счёта ровно через период после
+     * неё самой, а не после первой попытки, как было бы в фиксированном окне.
+     */
+    public function testWindowSlides(): void
     {
-        $storage = new ArrayRateStorage();
-        $limiter = new RateLimiter($storage, limit: 1, periodSeconds: 0);
+        $storage = new ArrayRateStorage(windowSeconds: 60);
+        $limiter = new RateLimiter($storage, limit: 2, periodSeconds: 60);
+
+        self::assertTrue($limiter->hit('1.2.3.4'));   // t=0
+        $storage->travel(40);
+        self::assertTrue($limiter->hit('1.2.3.4'));   // t=40
+        $storage->travel(10);
+        self::assertFalse($limiter->hit('1.2.3.4'));  // t=50, в окне обе
+
+        // Граница окна включается, как в запросе по таблице
+        $storage->travel(10);
+        self::assertFalse($limiter->hit('1.2.3.4'));  // t=60
+
+        $storage->travel(1);
+        self::assertTrue($limiter->hit('1.2.3.4'));   // t=61, первая выпала
+
+        // Фиксированное окно с t=61 открыло бы новое на две попытки,
+        // а скользящее ещё видит попытку с t=40
+        self::assertFalse($limiter->hit('1.2.3.4'));
+    }
+
+    /** Нулевой период прижимается к секунде, а не выключает лимит. */
+    public function testZeroPeriodStillLimits(): void
+    {
+        $limiter = new RateLimiter(new ArrayRateStorage(windowSeconds: 0), limit: 1, periodSeconds: 0);
 
         self::assertTrue($limiter->hit('1.2.3.4'));
-
-        // Срок истёк в тот же миг, поэтому счётчик снова нулевой: защиты нет.
-        // Ровно поэтому период в настройках не может быть меньше минуты
-        self::assertTrue($limiter->hit('1.2.3.4'));
+        self::assertFalse($limiter->hit('1.2.3.4'));
     }
 }

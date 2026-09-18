@@ -8,39 +8,34 @@ use Artem\Callback\Contract\RateStorageInterface;
 
 /**
  * Хранилище счётчиков в памяти для тестов лимитера.
+ *
+ * Повторяет DbRateStorage: окно скользящее, считаются попытки
+ * за последние N секунд, включая границу.
  */
 final class ArrayRateStorage implements RateStorageInterface
 {
-    /** @var array<string, array{count: int, expires: int}> */
-    private array $items = [];
+    /** @var array<string, list<int>> время каждой попытки по ключу */
+    private array $hits = [];
 
-    public function __construct(private int $now = 0)
+    private int $window;
+
+    public function __construct(int $windowSeconds = 3600, private int $now = 0)
     {
+        $this->window = max(1, $windowSeconds);
     }
 
     public function get(string $key): int
     {
-        $item = $this->items[$key] ?? null;
+        $since = $this->now - $this->window;
 
-        if ($item === null || $item['expires'] <= $this->now) {
-            return 0;
-        }
-
-        return $item['count'];
+        return count(array_filter($this->hits[$key] ?? [], static fn (int $at): bool => $at >= $since));
     }
 
     public function increment(string $key, int $ttl): int
     {
-        $item = $this->items[$key] ?? null;
-        $alive = $item !== null && $item['expires'] > $this->now;
+        $this->hits[$key][] = $this->now;
 
-        // Срок ставится при первом попадании и дальше не сдвигается
-        $count = $alive ? $item['count'] + 1 : 1;
-        $expires = $alive ? $item['expires'] : $this->now + $ttl;
-
-        $this->items[$key] = ['count' => $count, 'expires' => $expires];
-
-        return $count;
+        return $this->get($key);
     }
 
     public function travel(int $seconds): void

@@ -5,7 +5,7 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Loader;
 use Bitrix\Main\ModuleManager;
 use Bitrix\Main\Config\Option;
-use Artem\Callback\Bitrix\CacheRateStorage;
+use Artem\Callback\Bitrix\Log;
 use Artem\Callback\Model\RequestTable;
 
 Loc::loadMessages(__FILE__);
@@ -36,15 +36,17 @@ class artem_callback extends CModule
         $this->PARTNER_URI = Loc::getMessage('ARTEM_CALLBACK_PARTNER_URI');
     }
 
-    public function DoInstall(): void
+    /**
+     * Ядро считает установку удачной, если вернулось что угодно, кроме false,
+     * поэтому при сбое возвращаем именно false, а не пустой return.
+     */
+    public function DoInstall(): bool
     {
         global $APPLICATION;
 
         // includeModule отказывает незарегистрированному модулю, поэтому
         // регистрируем сразу, а при сбое снимаем регистрацию вместе с остальным
         ModuleManager::registerModule($this->MODULE_ID);
-
-        $filesInstalled = false;
 
         try {
             if (!Loader::includeModule($this->MODULE_ID)) {
@@ -53,34 +55,45 @@ class artem_callback extends CModule
 
             $this->InstallDB();
             $this->InstallEvents();
-            $filesInstalled = $this->InstallFiles();
+            $this->InstallFiles();
         } catch (\Throwable $e) {
-            if ($filesInstalled) {
-                $this->UnInstallFiles();
-            }
-
-            $this->UnInstallEvents();
+            // Файлы откатываем всегда: InstallFiles мог упасть на середине,
+            // успев что-то скопировать. Удаление своих файлов безопасно и
+            // тогда, когда до копирования не дошли
+            $this->rollback(fn () => $this->UnInstallFiles());
+            $this->rollback(fn () => $this->UnInstallEvents());
             ModuleManager::unRegisterModule($this->MODULE_ID);
 
-            // Классы модуля тут могут быть недоступны, поэтому журнал ядра напрямую
-            CEventLog::Add([
-                'SEVERITY' => 'ERROR',
-                'AUDIT_TYPE_ID' => 'ARTEM_CALLBACK_ERROR',
-                'MODULE_ID' => $this->MODULE_ID,
-                'DESCRIPTION' => 'установка не удалась: '.$e->getMessage(),
-            ]);
+            // Автозагрузка модуля тут может не работать, поэтому классы журнала
+            // подключаем напрямую
+            require_once dirname(__DIR__).'/lib/Config.php';
+            require_once dirname(__DIR__).'/lib/Bitrix/Log.php';
+            Log::error('установка не удалась: '.$e->getMessage());
 
             $APPLICATION->ThrowException(
-                Loc::getMessage('ARTEM_CALLBACK_INSTALL_FAILED') ?: 'Установка не удалась: '.$e->getMessage()
+                Loc::getMessage('ARTEM_CALLBACK_INSTALL_FAILED', ['#ERROR#' => $e->getMessage()])
             );
 
-            return;
+            return false;
         }
 
         $APPLICATION->IncludeAdminFile(
             Loc::getMessage('ARTEM_CALLBACK_INSTALL_TITLE'),
             __DIR__ . '/step_installed.php'
         );
+
+        return true;
+    }
+
+    /**
+     * Шаг отката не должен срывать остальные и подменять исходную ошибку.
+     */
+    private function rollback(callable $step): void
+    {
+        try {
+            $step();
+        } catch (\Throwable) {
+        }
     }
 
     public function DoUninstall(): void
@@ -145,7 +158,7 @@ class artem_callback extends CModule
      */
     public function UnInstallDB(array $params = []): bool
     {
-        // Настройки и счётчики убираем всегда.
+        // Настройки убираем всегда.
         //
         // Галка на шаге удаления обещает сохранить *заявки*, а не конфигурацию.
         // С прежним поведением настройки оставались в b_option, и при повторной
@@ -153,7 +166,6 @@ class artem_callback extends CModule
         // от которого форма молчит; человек потом долго ищет, почему
         // свежепоставленный модуль не принимает заявки.
         Option::delete($this->MODULE_ID);
-        CacheRateStorage::clearAll();
 
         if (empty($params['keepData'])) {
             $connection = Application::getConnection();

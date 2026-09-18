@@ -102,14 +102,23 @@ $sortField = in_array($sorting->getField(), $sortableFields, true)
     : 'ID';
 $sortOrder = strtoupper((string) $sorting->getOrder()) === 'ASC' ? 'ASC' : 'DESC';
 
+// Страница выбирается в запросе. NavStart у результата ORM сначала вычитывает
+// всю выборку в память и только потом режет её на страницы
+$nav = $list->getPageNavigation('nav-artem-callback');
+
 $query = RequestTable::query()
     ->setSelect(['*'])
     ->setFilter($filter)
-    ->setOrder([$sortField => $sortOrder]);
+    ->setOrder([$sortField => $sortOrder])
+    ->setOffset($nav->getOffset())
+    ->setLimit($nav->getLimit())
+    ->countTotal(true);
 
-$result = new CAdminUiResult($query->exec(), $tableId);
-$result->NavStart();
-$list->SetNavigationParams($result, ['BASE_LINK' => 'artem_callback_index.php']);
+$queryResult = $query->exec();
+$nav->setRecordCount($queryResult->getCount());
+$list->setNavigation($nav, (string) Loc::getMessage('ARTEM_CALLBACK_ADMIN_TITLE'));
+
+$result = new CAdminUiResult($queryResult, $tableId);
 
 while ($row = $result->GetNext()) {
     $item = $list->AddRow($row['ID'], $row);

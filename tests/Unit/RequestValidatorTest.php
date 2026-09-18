@@ -54,6 +54,19 @@ final class RequestValidatorTest extends TestCase
         self::assertArrayHasKey('slot', $validator->validate(self::VALID + ['slot' => 'ночью']));
     }
 
+    /**
+     * Пустой список раньше пропускал любую строку: интервалы длиннее колонки
+     * отфильтрованы из настроек, форма без выбора, а подделанный slot
+     * уходил в базу и ронял запись заявки.
+     */
+    public function testRejectsAnySlotWhenListIsEmpty(): void
+    {
+        $validator = $this->validator(slots: []);
+
+        self::assertSame([], $validator->validate(self::VALID));
+        self::assertArrayHasKey('slot', $validator->validate(self::VALID + ['slot' => str_repeat('9', 60)]));
+    }
+
     public function testLimitsCommentLength(): void
     {
         $errors = $this->validator()->validate(['comment' => str_repeat('а', 1001)] + self::VALID);

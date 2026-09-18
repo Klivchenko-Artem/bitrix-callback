@@ -12,3 +12,5 @@ $MESS['ARTEM_CALLBACK_OPT_MAX_COMMENT'] = 'Максимальная длина �
 $MESS['ARTEM_CALLBACK_SAVE'] = 'Сохранить';
 $MESS['ARTEM_CALLBACK_RESET'] = 'По умолчанию';
 $MESS['ARTEM_CALLBACK_OPTIONS_SAVED'] = 'Настройки сохранены';
+$MESS['ARTEM_CALLBACK_OPT_SLOT_TOO_LONG'] = 'Интервал длиннее #MAX# символов: #SLOT#. Настройки не сохранены';
+$MESS['ARTEM_CALLBACK_OPT_PROXY_WARNING'] = 'Сайт открыт через прокси, но веб-сервер не подставляет настоящий адрес посетителя: лимит заявок сейчас общий на всех. Настройте real_ip в nginx или mod_remoteip в Apache.';

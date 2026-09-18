@@ -33,13 +33,21 @@ $fields = [
     'comment_required' => ['type' => 'checkbox', 'label' => 'ARTEM_CALLBACK_OPT_COMMENT_REQUIRED'],
 ];
 
+/** @var array<string, string> $values что пришло из формы, уже приведённое */
+$values = [];
+
 if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
     if ($request->getPost('restore') !== null) {
-        Option::delete($moduleId);
+        // Сбрасываем только поля формы: служебные значения модуля вроде
+        // demo_installed должны пережить сброс, иначе при удалении модуль
+        // не узнает свою демо-страницу и оставит её на сайте
+        foreach (array_keys($fields) as $name) {
+            Option::delete($moduleId, ['name' => $name]);
+        }
     } else {
         foreach ($fields as $name => $field) {
             if ($field['type'] === 'checkbox') {
-                Option::set($moduleId, $name, $request->getPost($name) === 'Y' ? 'Y' : 'N');
+                $values[$name] = $request->getPost($name) === 'Y' ? 'Y' : 'N';
 
                 continue;
             }
@@ -58,16 +66,23 @@ if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
             if ($name === 'slots') {
                 foreach (preg_split('/\R/', $value) ?: [] as $slot) {
                     if (mb_strlen(trim($slot)) > Config::MAX_SLOT_LENGTH) {
-                        $errors[] = 'Интервал длиннее '.Config::MAX_SLOT_LENGTH.' символов: '.trim($slot);
+                        $errors[] = Loc::getMessage('ARTEM_CALLBACK_OPT_SLOT_TOO_LONG', [
+                            '#MAX#' => Config::MAX_SLOT_LENGTH,
+                            '#SLOT#' => trim($slot),
+                        ]);
                     }
-                }
-
-                if ($errors !== []) {
-                    continue;
                 }
             }
 
-            Option::set($moduleId, $name, $value);
+            $values[$name] = $value;
+        }
+
+        // Всё или ничего: при ошибке не сохраняем и остальные поля, иначе
+        // на экране старые значения, а в базе уже половина новых
+        if ($errors === []) {
+            foreach ($values as $name => $value) {
+                Option::set($moduleId, $name, $value);
+            }
         }
     }
 
@@ -75,6 +90,18 @@ if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
         ? new CAdminMessage(['MESSAGE' => Loc::getMessage('ARTEM_CALLBACK_OPTIONS_SAVED'), 'TYPE' => 'OK'])
         : new CAdminMessage(['MESSAGE' => implode('<br>', array_map('htmlspecialcharsbx', $errors)), 'TYPE' => 'ERROR']);
 }
+
+// После ошибки в форме остаётся введённое, чтобы его не набирать заново
+$shown = static fn (string $name): string => $errors !== [] && isset($values[$name])
+    ? $values[$name]
+    : Config::get($name);
+
+// Лимит считается по REMOTE_ADDR. Если запрос пришёл через прокси, а веб-сервер
+// не подставил настоящий адрес, у всех посетителей один адрес прокси, и один
+// лимит на весь сайт. Заметно это только отсюда, поэтому предупреждаем здесь
+$forwardedFor = (string) $request->getServer()->get('HTTP_X_FORWARDED_FOR');
+$proxyWarning = $forwardedFor !== ''
+    && !in_array((string) $request->getRemoteAddress(), array_map('trim', explode(',', $forwardedFor)), true);
 
 $tabControl = new CAdminTabControl('artemCallbackTabs', [
     [
@@ -88,6 +115,10 @@ if ($message !== null) {
     echo $message->Show();
 }
 
+if ($proxyWarning) {
+    echo (new CAdminMessage(['MESSAGE' => Loc::getMessage('ARTEM_CALLBACK_OPT_PROXY_WARNING'), 'TYPE' => 'ERROR']))->Show();
+}
+
 $tabControl->Begin();
 ?>
 <form method="post" action="<?= $APPLICATION->GetCurPage() ?>?mid=<?= htmlspecialcharsbx($mid) ?>&amp;lang=<?= LANGUAGE_ID ?>">
@@ -99,13 +130,13 @@ $tabControl->Begin();
             <td width="40%"><?= Loc::getMessage($field['label']) ?>:</td>
             <td width="60%">
                 <?php if ($field['type'] === 'textarea'): ?>
-                    <textarea name="<?= $name ?>" rows="5" cols="40"><?= htmlspecialcharsbx(Config::get($name)) ?></textarea>
+                    <textarea name="<?= $name ?>" rows="5" cols="40"><?= htmlspecialcharsbx($shown($name)) ?></textarea>
                 <?php elseif ($field['type'] === 'checkbox'): ?>
                     <input type="hidden" name="<?= $name ?>" value="N">
-                    <input type="checkbox" name="<?= $name ?>" value="Y"<?= Config::isOn($name) ? ' checked' : '' ?>>
+                    <input type="checkbox" name="<?= $name ?>" value="Y"<?= $shown($name) === 'Y' ? ' checked' : '' ?>>
                 <?php else: ?>
                     <input type="<?= $field['type'] ?>" name="<?= $name ?>" size="<?= $field['size'] ?>"
-                           value="<?= htmlspecialcharsbx(Config::get($name)) ?>">
+                           value="<?= htmlspecialcharsbx($shown($name)) ?>">
                 <?php endif; ?>
             </td>
         </tr>

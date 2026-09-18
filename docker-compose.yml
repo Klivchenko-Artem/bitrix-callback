@@ -5,6 +5,8 @@ services:
       dockerfile: docker/php/Dockerfile
     environment:
       BITRIX_DIST_URL: ${BITRIX_DIST_URL:-https://www.1c-bitrix.ru/download/start_encode.tar.gz}
+      # Только для подсказки в логе: наружу порт публикует nginx
+      HTTP_PORT: ${HTTP_PORT:-8081}
     volumes:
       - www:/var/www/html
       # В репозитории лежит только сам модуль; всё, что он ставит

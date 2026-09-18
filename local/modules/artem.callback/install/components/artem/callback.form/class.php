@@ -136,7 +136,9 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
 
         $validator = new RequestValidator(
             $phones,
-            Config::getSlots(),
+            // Интервалы не показаны, значит, и выбирать не из чего:
+            // пустой список валидатор трактует как «интервал не принимается»
+            $this->arParams['SHOW_SLOTS'] ? Config::getSlots() : [],
             $commentShown && Config::isOn('comment_required'),
             Config::getInt('max_comment'),
             Config::isOn('consent_required'),
@@ -181,6 +183,15 @@ class CallbackFormComponent extends CBitrixComponent implements Controllerable, 
 
         try {
             $locked = $connection->lock($lockName, 5);
+
+            // Без блокировки лимит не держит пачку запросов, поэтому
+            // не дождались её, значит, заявку не принимаем
+            if (!$locked) {
+                Log::error('не дождались блокировки для '.$clientIp.', заявка отклонена');
+                $this->errors->setError(new Error('Сервер занят, отправьте заявку ещё раз через несколько секунд.', 'save'));
+
+                return null;
+            }
 
             if (!$limiter->hit($clientIp)) {
                 $this->errors->setError(new Error('Слишком много заявок подряд. Мы уже видим вашу, перезвоним.', 'rate'));

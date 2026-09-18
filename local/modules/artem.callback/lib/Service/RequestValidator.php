@@ -56,8 +56,10 @@ final class RequestValidator
             $errors['comment'] = 'Комментарий длиннее ' . $this->maxCommentLength . ' символов';
         }
 
+        // Пустой список не значит «любой»: интервалы, которые не влезли в колонку,
+        // отфильтрованы из настроек, и произвольная строка потом не сохранится
         $slot = trim((string) ($data['slot'] ?? ''));
-        if ($slot !== '' && $this->allowedSlots !== [] && !in_array($slot, $this->allowedSlots, true)) {
+        if ($slot !== '' && !in_array($slot, $this->allowedSlots, true)) {
             $errors['slot'] = 'Выберите время из списка';
         }
 

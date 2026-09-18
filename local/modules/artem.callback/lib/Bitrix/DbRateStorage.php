@@ -20,9 +20,6 @@ final class DbRateStorage implements RateStorageInterface
 {
     private int $window;
 
-    /** @var array<string, int> последний подсчёт по ключу, чтобы не считать дважды */
-    private array $counted = [];
-
     public function __construct(int $windowSeconds = 3600)
     {
         $this->window = max(1, $windowSeconds);
@@ -37,17 +34,18 @@ final class DbRateStorage implements RateStorageInterface
         $since = new DateTime();
         $since->add('-'.$this->window.' seconds');
 
-        return $this->counted[$key] = (int) RequestTable::getCount([
+        return (int) RequestTable::getCount([
             '=CLIENT_IP' => $key,
             '>=CREATED_AT' => $since,
         ]);
     }
 
     /**
-     * Отдельно ничего не пишет: счётчик вырастет, когда заявка ляжет в таблицу.
+     * Сам ничего не пишет: попыткой считается строка заявки, которую сохранят
+     * следом под той же блокировкой. Возвращает счёт с учётом этой заявки.
      */
     public function increment(string $key, int $ttl): int
     {
-        return ($this->counted[$key] ?? $this->get($key)) + 1;
+        return $this->get($key) + 1;
     }
 }
