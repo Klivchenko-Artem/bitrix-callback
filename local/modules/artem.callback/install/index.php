@@ -5,6 +5,7 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Loader;
 use Bitrix\Main\ModuleManager;
 use Bitrix\Main\Config\Option;
+use Bitrix\Main\Data\Cache;
 use Artem\Callback\Bitrix\Log;
 use Artem\Callback\Model\RequestTable;
 
@@ -48,6 +49,8 @@ class artem_callback extends CModule
         // регистрируем сразу, а при сбое снимаем регистрацию вместе с остальным
         ModuleManager::registerModule($this->MODULE_ID);
 
+        $copyingStarted = false;
+
         try {
             if (!Loader::includeModule($this->MODULE_ID)) {
                 throw new \RuntimeException('модуль не подключился');
@@ -55,23 +58,32 @@ class artem_callback extends CModule
 
             $this->InstallDB();
             $this->InstallEvents();
+
+            $copyingStarted = true;
             $this->InstallFiles();
         } catch (\Throwable $e) {
-            // Файлы откатываем всегда: InstallFiles мог упасть на середине,
-            // успев что-то скопировать. Удаление своих файлов безопасно и
-            // тогда, когда до копирования не дошли
-            $this->rollback(fn () => $this->UnInstallFiles());
-            $this->rollback(fn () => $this->UnInstallEvents());
-            ModuleManager::unRegisterModule($this->MODULE_ID);
-
             // Автозагрузка модуля тут может не работать, поэтому классы журнала
             // подключаем напрямую
             require_once dirname(__DIR__).'/lib/Config.php';
             require_once dirname(__DIR__).'/lib/Bitrix/Log.php';
+
+            // Файлы убираем, только если начинали их копировать: иначе откат
+            // снёс бы компонент, который лежал на сайте до этой установки,
+            // например вместе со своими шаблонами под git
+            if ($copyingStarted) {
+                $this->rollback('файлы', fn () => $this->UnInstallFiles());
+            }
+
+            $this->rollback('почтовое событие', fn () => $this->UnInstallEvents());
+            ModuleManager::unRegisterModule($this->MODULE_ID);
+
             Log::error('установка не удалась: '.$e->getMessage());
 
+            // Языкового файла под язык админки может не быть, тогда без запасного
+            // текста причина сбоя пропала бы с экрана
             $APPLICATION->ThrowException(
                 Loc::getMessage('ARTEM_CALLBACK_INSTALL_FAILED', ['#ERROR#' => $e->getMessage()])
+                    ?: 'Установка не удалась: '.$e->getMessage()
             );
 
             return false;
@@ -86,13 +98,15 @@ class artem_callback extends CModule
     }
 
     /**
-     * Шаг отката не должен срывать остальные и подменять исходную ошибку.
+     * Шаг отката не должен срывать остальные и подменять исходную ошибку,
+     * но и пропадать молча не должен: иначе мусор после отката не найти.
      */
-    private function rollback(callable $step): void
+    private function rollback(string $what, callable $step): void
     {
         try {
             $step();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            Log::error('откат установки не убрал '.$what.': '.$e->getMessage());
         }
     }
 
@@ -167,6 +181,9 @@ class artem_callback extends CModule
         // свежепоставленный модуль не принимает заявки.
         Option::delete($this->MODULE_ID);
 
+        // Счётчики прежних версий модуля лежали в кеше ядра, убираем и их
+        Cache::createInstance()->cleanDir('/artem.callback/rate');
+
         if (empty($params['keepData'])) {
             $connection = Application::getConnection();
 
@@ -232,20 +249,18 @@ class artem_callback extends CModule
 
     public function InstallFiles(): bool
     {
-        // Компонент едет из состава модуля в /local/components, как и положено
-        CopyDirFiles(
-            __DIR__ . '/components',
-            Application::getDocumentRoot() . '/local/components',
-            true,
-            true
-        );
+        // CopyDirFiles не бросает исключений, а возвращает false: без проверки
+        // установка без прав на запись писала «установлено» без компонента
+        // и без страницы в админке
 
-        CopyDirFiles(
-            __DIR__ . '/admin',
-            Application::getDocumentRoot() . '/bitrix/admin',
-            true,
-            true
-        );
+        // Компонент едет из состава модуля в /local/components, как и положено
+        if (!CopyDirFiles(__DIR__ . '/components', Application::getDocumentRoot() . '/local/components', true, true)) {
+            throw new \RuntimeException('не удалось скопировать компонент в /local/components');
+        }
+
+        if (!CopyDirFiles(__DIR__ . '/admin', Application::getDocumentRoot() . '/bitrix/admin', true, true)) {
+            throw new \RuntimeException('не удалось скопировать страницу в /bitrix/admin');
+        }
 
         // Демо-страница, чтобы форму было где посмотреть сразу после установки.
         // Кладём только если на сайте такой страницы ещё нет, и запоминаем это:

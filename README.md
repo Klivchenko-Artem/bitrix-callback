@@ -66,7 +66,7 @@ docker compose up -d
 Дальше:
 
 1. http://localhost:8081/, мастер установки Битрикса. Порт можно подвинуть:
-   `HTTP_PORT=8090 docker compose up -d`.
+   `PUBLIC_PORT=8090 docker compose up -d`.
    База: хост `mysql`, имя `bitrix`, пользователь `bitrix`, пароль `bitrix`.
 2. В «Marketplace / Установленные решения» установить «Обратный звонок».
 3. В «Настройки / Настройки продукта / Настройки модулей / Обратный звонок»

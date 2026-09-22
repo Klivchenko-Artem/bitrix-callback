@@ -32,7 +32,7 @@ if [ ! -d "$ROOT/bitrix" ]; then
     echo "[bitrix] распаковываю..."
     tar -xzf "$ARCHIVE" -C "$ROOT"
     rm -f "$ARCHIVE"
-    echo "[bitrix] готово, мастер установки на http://localhost:${HTTP_PORT:-8081}/"
+    echo "[bitrix] готово, мастер установки на http://localhost:${PUBLIC_PORT:-8081}/"
 fi
 
 chown -R www-data:www-data "$ROOT" 2>/dev/null || true

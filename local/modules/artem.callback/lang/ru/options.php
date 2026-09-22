@@ -13,4 +13,4 @@ $MESS['ARTEM_CALLBACK_SAVE'] = 'Сохранить';
 $MESS['ARTEM_CALLBACK_RESET'] = 'По умолчанию';
 $MESS['ARTEM_CALLBACK_OPTIONS_SAVED'] = 'Настройки сохранены';
 $MESS['ARTEM_CALLBACK_OPT_SLOT_TOO_LONG'] = 'Интервал длиннее #MAX# символов: #SLOT#. Настройки не сохранены';
-$MESS['ARTEM_CALLBACK_OPT_PROXY_WARNING'] = 'Сайт открыт через прокси, но веб-сервер не подставляет настоящий адрес посетителя: лимит заявок сейчас общий на всех. Настройте real_ip в nginx или mod_remoteip в Apache.';
+$MESS['ARTEM_CALLBACK_OPT_PROXY_WARNING'] = 'Похоже, сайт стоит за прокси, а веб-сервер отдаёт модулю адрес прокси, а не посетителя: лимит заявок сейчас общий на всех. Разбираться с этим нужно на стороне веб-сервера, и только для адресов своего прокси.';

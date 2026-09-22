@@ -103,19 +103,28 @@ $sortField = in_array($sorting->getField(), $sortableFields, true)
 $sortOrder = strtoupper((string) $sorting->getOrder()) === 'ASC' ? 'ASC' : 'DESC';
 
 // Страница выбирается в запросе. NavStart у результата ORM сначала вычитывает
-// всю выборку в память и только потом режет её на страницы
+// всю выборку в память и только потом режет её на страницы, поэтому берём
+// смещение из навигации сами.
+//
+// Считаем до выборки: номер страницы приходит из адреса, и за концом списка
+// (последнюю заявку удалили, ссылку сохранили в закладки) смещение уводило
+// запрос в пустоту, а на экране был пустой список без объяснений. NavStart
+// такой номер прижимал к последней странице, поэтому делаем это руками
 $nav = $list->getPageNavigation('nav-artem-callback');
+$nav->setRecordCount(RequestTable::getCount($filter));
+
+if ($nav->getCurrentPage() > $nav->getPageCount()) {
+    $nav->setCurrentPage(max(1, $nav->getPageCount()));
+}
 
 $query = RequestTable::query()
     ->setSelect(['*'])
     ->setFilter($filter)
     ->setOrder([$sortField => $sortOrder])
     ->setOffset($nav->getOffset())
-    ->setLimit($nav->getLimit())
-    ->countTotal(true);
+    ->setLimit($nav->getLimit());
 
 $queryResult = $query->exec();
-$nav->setRecordCount($queryResult->getCount());
 $list->setNavigation($nav, (string) Loc::getMessage('ARTEM_CALLBACK_ADMIN_TITLE'));
 
 $result = new CAdminUiResult($queryResult, $tableId);

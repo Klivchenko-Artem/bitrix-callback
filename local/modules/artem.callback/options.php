@@ -16,6 +16,11 @@ if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true) {
 Loc::loadMessages(__FILE__);
 Loader::includeModule('artem.callback');
 
+// Языкового файла под язык админки может не быть: в английской админке
+// Loc::getMessage вернёт null, и сообщение об ошибке уедет пустой рамкой
+$text = static fn (string $code, string $fallback, array $replace = []): string =>
+    (string) (Loc::getMessage($code, $replace) ?: strtr($fallback, array_map('strval', $replace)));
+
 $moduleId = Config::MODULE_ID;
 $request = Application::getInstance()->getContext()->getRequest();
 $rightsToEdit = $APPLICATION->GetGroupRight($moduleId) >= 'W';
@@ -66,10 +71,11 @@ if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
             if ($name === 'slots') {
                 foreach (preg_split('/\R/', $value) ?: [] as $slot) {
                     if (mb_strlen(trim($slot)) > Config::MAX_SLOT_LENGTH) {
-                        $errors[] = Loc::getMessage('ARTEM_CALLBACK_OPT_SLOT_TOO_LONG', [
-                            '#MAX#' => Config::MAX_SLOT_LENGTH,
-                            '#SLOT#' => trim($slot),
-                        ]);
+                        $errors[] = $text(
+                            'ARTEM_CALLBACK_OPT_SLOT_TOO_LONG',
+                            'Интервал длиннее #MAX# символов: #SLOT#. Настройки не сохранены',
+                            ['#MAX#' => Config::MAX_SLOT_LENGTH, '#SLOT#' => trim($slot)]
+                        );
                     }
                 }
             }
@@ -87,7 +93,7 @@ if ($rightsToEdit && $request->isPost() && check_bitrix_sessid()) {
     }
 
     $message = $errors === []
-        ? new CAdminMessage(['MESSAGE' => Loc::getMessage('ARTEM_CALLBACK_OPTIONS_SAVED'), 'TYPE' => 'OK'])
+        ? new CAdminMessage(['MESSAGE' => $text('ARTEM_CALLBACK_OPTIONS_SAVED', 'Настройки сохранены'), 'TYPE' => 'OK'])
         : new CAdminMessage(['MESSAGE' => implode('<br>', array_map('htmlspecialcharsbx', $errors)), 'TYPE' => 'ERROR']);
 }
 
@@ -98,10 +104,53 @@ $shown = static fn (string $name): string => $errors !== [] && isset($values[$na
 
 // Лимит считается по REMOTE_ADDR. Если запрос пришёл через прокси, а веб-сервер
 // не подставил настоящий адрес, у всех посетителей один адрес прокси, и один
-// лимит на весь сайт. Заметно это только отсюда, поэтому предупреждаем здесь
+// лимит на весь сайт. Заметно это только отсюда, поэтому предупреждаем здесь.
+//
+// Ругаться есть смысл, только когда REMOTE_ADDR внутренний: у админа за
+// корпоративным прокси заголовок тоже будет, но адрес при этом настоящий.
+// Сравнивать адреса в лоб нельзя: в заголовке встречаются порт, ::ffff: и
+// разный регистр шестнадцатеричных групп IPv6
+$normalizeIp = static function (string $ip): string {
+    $ip = trim($ip);
+
+    // [v6]:port и [v6]
+    if (preg_match('/^\[(.+)\](?::\d+)?$/', $ip, $matches) === 1) {
+        $ip = $matches[1];
+    }
+
+    // v4:port. У голого IPv6 двоеточий много, его так резать нельзя
+    if (substr_count($ip, ':') === 1) {
+        $ip = substr($ip, 0, (int) strrpos($ip, ':'));
+    }
+
+    $packed = @inet_pton($ip);
+
+    if ($packed === false) {
+        return mb_strtolower($ip);
+    }
+
+    // ::ffff:1.2.3.4 — это тот же адрес, что и 1.2.3.4, но inet_ntop
+    // возвращает его как есть, и сравнение в лоб их не узнаёт
+    $v4MappedPrefix = substr((string) inet_pton('::ffff:0.0.0.0'), 0, 12);
+
+    if (strlen($packed) === 16 && str_starts_with($packed, $v4MappedPrefix)) {
+        $packed = substr($packed, 12);
+    }
+
+    return (string) inet_ntop($packed);
+};
+
+$remoteAddress = $normalizeIp((string) $request->getRemoteAddress());
 $forwardedFor = (string) $request->getServer()->get('HTTP_X_FORWARDED_FOR');
+$forwarded = array_map($normalizeIp, $forwardedFor === '' ? [] : explode(',', $forwardedFor));
+
 $proxyWarning = $forwardedFor !== ''
-    && !in_array((string) $request->getRemoteAddress(), array_map('trim', explode(',', $forwardedFor)), true);
+    && !in_array($remoteAddress, $forwarded, true)
+    && !filter_var(
+        $remoteAddress,
+        FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+    );
 
 $tabControl = new CAdminTabControl('artemCallbackTabs', [
     [
@@ -116,7 +165,13 @@ if ($message !== null) {
 }
 
 if ($proxyWarning) {
-    echo (new CAdminMessage(['MESSAGE' => Loc::getMessage('ARTEM_CALLBACK_OPT_PROXY_WARNING'), 'TYPE' => 'ERROR']))->Show();
+    echo (new CAdminMessage([
+        'MESSAGE' => $text(
+            'ARTEM_CALLBACK_OPT_PROXY_WARNING',
+            'Похоже, сайт стоит за прокси, а веб-сервер отдаёт модулю адрес прокси, а не посетителя: лимит заявок сейчас общий на всех.'
+        ),
+        'TYPE' => 'ERROR',
+    ]))->Show();
 }
 
 $tabControl->Begin();
@@ -143,8 +198,8 @@ $tabControl->Begin();
     <?php endforeach; ?>
 
     <?php $tabControl->Buttons(); ?>
-    <input type="submit" name="save" class="adm-btn-save" value="<?= Loc::getMessage('ARTEM_CALLBACK_SAVE') ?>"<?= $rightsToEdit ? '' : ' disabled' ?>>
-    <input type="submit" name="restore" value="<?= Loc::getMessage('ARTEM_CALLBACK_RESET') ?>"<?= $rightsToEdit ? '' : ' disabled' ?>
+    <input type="submit" name="save" class="adm-btn-save" value="<?= $text('ARTEM_CALLBACK_SAVE', 'Сохранить') ?>"<?= $rightsToEdit ? '' : ' disabled' ?>>
+    <input type="submit" name="restore" value="<?= $text('ARTEM_CALLBACK_RESET', 'По умолчанию') ?>"<?= $rightsToEdit ? '' : ' disabled' ?>
            onclick="return confirm('Сбросить настройки модуля?');">
     <?php $tabControl->End(); ?>
 </form>
